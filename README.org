@@ -1,5 +1,12 @@
-* Supporting information
-** Decompress all data
+* ITS2database_update_2015
+** Description
+Scripts and data for ITS2 database update in 2015
+
+This repository contains the scripts used during analysing the database content of the ITS2 database.
+
+This is part of the supplemental material
+** Supplementary information
+*** Decompress all data
 #+BEGIN_SRC sh :dir ./data/
 for i in $(find -name "*.bz2" | grep -v ".tar")
 do
@@ -7,15 +14,11 @@ do
     bunzip2 $(basename "$i")
     cd - 2>/dev/null >/dev/null
 done
-
-# uncompress the gi_taxon.bin
-cd NCBI_taxonomy_files
-ls gi_taxid.0* | sort | xargs cat | bunzip2 - > gi_taxid.bin
 #+END_SRC
 
 #+results:
 
-** Generate homology modeling, partial and sequence only datasets
+*** Generate homology modeling, partial and sequence only datasets
 #+BEGIN_SRC sh :dir ./data/ :results output replace
 for i in 2011 2015
 do
@@ -57,7 +60,7 @@ done
 
 #+results:
 
-** Sequence counts and  change
+*** Sequence counts and change
 To count the number of sequences in each category run the following code
 #+BEGIN_SRC sh :dir ./data/ :results output drawer replace
 grep -c "^>" 201[15]/*.fasta | \
@@ -94,7 +97,7 @@ perl -ne '
 #+TBLFM: $4=(($3/$2)*100)-100;%0.2f
 :END:
 
-** Taxa counts
+*** Taxa counts
 #+BEGIN_SRC sh :dir ./data/
 for YEAR in 2011 2015
 do
@@ -143,7 +146,7 @@ perl -ne '
 #+TBLFM: $4=(($3/$2)*100)-100;%0.2f
 :END:
 
-** Taxonomy from NCBI
+*** Taxonomy from NCBI
 We retrieved the current taxonomy from NCBI (2015-06-12).
 After generation of the and generated the TaxID list for all database entries we reduced the gi_taxid to the required GIs:
 #+BEGIN_SRC sh :dir ./data/
@@ -172,7 +175,7 @@ cat 201[15]/eukaryota.all.taxids 201[15]/eukaryota.all.gis_without_taxid | \
 
 #+results:
 
-** Changed TaxIDs
+*** Changed TaxIDs
 #+BEGIN_SRC sh :dir ./data/
 join -j 1 2011/gi_taxid_2011_original 2015/gi_taxid_2015_original > gi_taxid_joined
 perl -I./NCBI_taxonomy_files/lib/ ../code/taxid_change_analysis.pl gi_taxid_joined | cut -f1 | sort | uniq -c
@@ -182,7 +185,7 @@ perl -I./NCBI_taxonomy_files/lib/ ../code/taxid_change_analysis.pl gi_taxid_join
 |   7464 | Different |
 | 368239 | Same      |
 
-** Lost GIs
+*** Lost GIs
 #+BEGIN_SRC sh :dir ./data/ :results output drawer replace
 cat 2011/eukaryota.all.gis 2015/eukaryota.all.gis 2015/eukaryota.all.gis | sort -n | uniq -u > lost_gis.txt
 for i in $(cat lost_gis.txt); do echo "$i\t"$(wget -O - 'http://www.ncbi.nlm.nih.gov/nuccore/'$i'?report=girevhist&format=xml' | grep -c "Record removed"); done > removed.txt 2> removed.log
@@ -229,7 +232,7 @@ perl ../code/parse_missing_gis.pl --removed removed.txt --genbank seq.gb | \
 | Substituted    |               559 |
 | Wrong division |               489 |
 :END:
-** Mapping counts onto Adl taxonomy
+*** Mapping counts onto Adl taxonomy
 #+BEGIN_SRC sh :dir ./data/
 mkdir -p adl_mappings
 
@@ -241,7 +244,7 @@ perl -I../NCBI_taxonomy_files/lib/ ../../code/generate_adl_mappings.pl --new ../
 #+results:
 : Found 28 different ranks named 'Adl_taxonomy' representing 378071/706701 sequences and 132 taxid without that rank representing 695/4338 sequences
 
-** BISON
+*** BISON
 Download of viridiplantae data for all states of the USA and assign
 NCBI TaxIDs on genus and species level:
 #+BEGIN_SRC sh :dir ./data/
@@ -303,3 +306,26 @@ echo '#+TBLFM: @4$2..@4$3=((@3/'$NUMBERBISON')*100);%0.2f::@3$4=((@3$3/@3$2)*100
 | coverage in percent    | 59.28 | 71.61 |        |
 #+TBLFM: @4$2..@4$3=((@3/18537)*100);%0.2f::@3$4=((@3$3/@3$2)*100)-100;%0.2f
 :END:
+** Licence
+The MIT License (MIT)
+
+Copyright (c) 2015 
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
