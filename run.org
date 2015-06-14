@@ -1,0 +1,305 @@
+* Supporting information
+** Decompress all data
+#+BEGIN_SRC sh :dir ./data/
+for i in $(find -name "*.bz2" | grep -v ".tar")
+do
+    cd $(dirname "$i")
+    bunzip2 $(basename "$i")
+    cd - 2>/dev/null >/dev/null
+done
+
+# uncompress the gi_taxon.bin
+cd NCBI_taxonomy_files
+ls gi_taxid.0* | sort | xargs cat | bunzip2 - > gi_taxid.bin
+#+END_SRC
+
+#+results:
+
+** Generate homology modeling, partial and sequence only datasets
+#+BEGIN_SRC sh :dir ./data/ :results output replace
+for i in 2011 2015
+do
+    cd "$i"
+
+    # fix a small issue with the sequence only sets because they
+    # contain a space after the fasta header >
+    sed -i '/^>/s/^> />/g' eukaryota.all.fasta
+    cat eukaryota.all.fasta eukaryota.partial.fasta eukaryota.partial.fasta | \
+	sed '/>/s/$/<<</g' | \
+	tr -d "\n" | \
+	sed 's/>/\n>/g' | \
+	sed '/^$/d' | \
+	sort | \
+	uniq -u | \
+	sed 's/<<</\n/g' > eukaryota.seqonly.fasta
+
+    cat eukaryota.partial.fasta eukaryota.hm.fasta eukaryota.hm.fasta | \
+	sed '/>/s/$/<<</g' | \
+	tr -d "\n" | \
+	sed 's/>/\n>/g' | \
+	sed '/^$/d' | \
+	sort | \
+	uniq -u | \
+	sed 's/<<</\n/g' > eukaryota.partialonly.fasta
+
+    cat eukaryota.hm.fasta eukaryota.direct.fasta eukaryota.direct.fasta | \
+	sed '/>/s/$/<<</g' | \
+	tr -d "\n" | \
+	sed 's/>/\n>/g' | \
+	sed '/^$/d' | \
+	sort | \
+	uniq -u | \
+	sed 's/<<</\n/g' > eukaryota.hmonly.fasta
+
+    cd ..
+done
+#+END_SRC
+
+#+results:
+
+** Sequence counts and  change
+To count the number of sequences in each category run the following code
+#+BEGIN_SRC sh :dir ./data/ :results output drawer replace
+grep -c "^>" 201[15]/*.fasta | \
+perl -ne '
+   $_ =~ /^(.{4})\/([^:]+):(\d+)/;
+   $hash{$2}{$1}=$3;
+   $folder{$1}++;
+
+   END
+   {
+      # print header
+      print "|".join(" | ", ("", sort keys %folder, "change"))." |\n";
+      print "|--\n";
+      foreach my $file (sort keys %hash)
+      {
+        print "|".join(" | ", ($file, map {$hash{$file}{$_}} (sort keys %folder), ""))." |\n";
+      }
+      print "#+TBLFM: \$4=((\$3/\$2)*100)-100;\%0.2f\n";
+   }
+'
+#+END_SRC
+
+#+results:
+:RESULTS:
+|                             |   2011 |   2015 | change |
+|-----------------------------+--------+--------+--------|
+| eukaryota.all.fasta         | 379329 | 711172 |  87.48 |
+| eukaryota.direct.fasta      |  99142 | 178612 |  80.16 |
+| eukaryota.hm.fasta          | 213357 | 392510 |  83.97 |
+| eukaryota.hmonly.fasta      | 114215 | 213898 |  87.28 |
+| eukaryota.partial.fasta     | 288370 | 630380 | 118.60 |
+| eukaryota.partialonly.fasta |  75013 | 237870 | 217.11 |
+| eukaryota.seqonly.fasta     |  90959 |  80792 | -11.18 |
+#+TBLFM: $4=(($3/$2)*100)-100;%0.2f
+:END:
+
+** Taxa counts
+#+BEGIN_SRC sh :dir ./data/
+for YEAR in 2011 2015
+do
+    cd "$YEAR"
+    for i in all hm partial direct
+    do
+	grep "^>" eukaryota.${i}.fasta | perl -pe 's/^>\s*(\d+).*/$1/' >eukaryota.${i}.gis
+	perl -I../NCBI_taxonomy_files/lib/ ../../code/gi2taxonomy.pl --gis eukaryota.${i}.gis --species eukaryota.${i}.species.taxids --genus eukaryota.${i}.genus.taxids --out eukaryota.${i}.tax --taxids eukaryota.${i}.taxids 2> eukaryota.${i}.gi2taxonomy.err > eukaryota.${i}.gi2taxonomy.log
+    done
+    /bin/bash -c 'join -v 1 <(sort -n -k1b,1 eukaryota.all.gis) <(sort -n -k1b,1 eukaryota.all.taxids) >eukaryota.all.gis_without_taxid'
+    cd ..
+done
+#+END_SRC
+
+#+results:
+
+#+BEGIN_SRC sh :dir ./data/ :results output drawer replace
+wc -l ./201[15]/eukaryota.all.*.taxids | \
+sed '$d' | \
+perl -ne '
+   $_ =~ /^\s*(\d+)\s+\.\/(201.).+all\.(species|genus)/;
+   $hash{$3}{$2}=$1;
+   $folder{$2}++;
+
+   END
+   {
+      # print header
+      print "|".join(" | ", ("", sort keys %folder, "change"))." |\n";
+      print "|--\n";
+      foreach my $file (sort keys %hash)
+      {
+        print "|".join(" | ", ($file, map {$hash{$file}{$_}} (sort keys %folder), ""))." |\n";
+      }
+      print "#+TBLFM: \$4=((\$3/\$2)*100)-100;\%0.2f\n";
+   }
+'
+
+#+END_SRC
+
+#+results:
+:RESULTS:
+|         |   2011 |   2015 | change |
+|---------+--------+--------+--------|
+| genus   |  13736 |  16925 |  23.22 |
+| species | 110651 | 175660 |  58.75 |
+#+TBLFM: $4=(($3/$2)*100)-100;%0.2f
+:END:
+
+** Taxonomy from NCBI
+We retrieved the current taxonomy from NCBI (2015-06-12).
+After generation of the and generated the TaxID list for all database entries we reduced the gi_taxid to the required GIs:
+#+BEGIN_SRC sh :dir ./data/
+cat 201[15]/eukaryota.all.taxids 201[15]/eukaryota.all.gis_without_taxid | \
+    sort -n | \
+    uniq | \
+    perl -ne '
+       BEGIN{ open(FH, ">", "/tmp/gi_taxid_reduced.bin") || die; }
+
+       chomp();
+       @dat=split(/\t/, $_);
+
+       unless ($dat[1] && $dat[1]>0)
+       {
+          print STDERR "Generated empty entry for GI $dat[0]\n";
+          @dat=(0,0);
+       }
+
+       $pos=($dat[0]-1)*8;
+       seek(FH, $pos, 0);
+       print FH pack("LL", @dat);
+
+       END{ close(FH) || die; }
+    '
+#+END_SRC
+
+#+results:
+
+** Changed TaxIDs
+#+BEGIN_SRC sh :dir ./data/
+join -j 1 2011/gi_taxid_2011_original 2015/gi_taxid_2015_original > gi_taxid_joined
+perl -I./NCBI_taxonomy_files/lib/ ../code/taxid_change_analysis.pl gi_taxid_joined | cut -f1 | sort | uniq -c
+#+END_SRC
+
+#+results:
+|   7464 | Different |
+| 368239 | Same      |
+
+** Lost GIs
+#+BEGIN_SRC sh :dir ./data/ :results output drawer replace
+cat 2011/eukaryota.all.gis 2015/eukaryota.all.gis 2015/eukaryota.all.gis | sort -n | uniq -u > lost_gis.txt
+for i in $(cat lost_gis.txt); do echo "$i\t"$(wget -O - 'http://www.ncbi.nlm.nih.gov/nuccore/'$i'?report=girevhist&format=xml' | grep -c "Record removed"); done > removed.txt 2> removed.log
+for i in $(cat lost_gis.txt); do wget -O - 'http://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=nucleotide&id='"$i"'&rettype=gbwithparts&retmode=text'; done > seq.gb 2> seq.log
+
+perl ../code/parse_missing_gis.pl --removed removed.txt --genbank seq.gb | \
+    cut -f 6 | sort | uniq -c | \
+    awk '
+       BEGIN{
+         print "| Reason | Number of entries | \n|--";
+       }
+       {
+         if ($2 == 0)
+         {
+            type="Others"
+         }
+
+         if ($2== 1)
+         {
+            type="Entry removed"
+         }
+
+         if ($2== 2)
+         {
+            type="Substituted"
+         }
+
+         if ($2== 4)
+         {
+            type="Wrong division"
+         }
+
+         print "|"type"|\t"$1"|"
+       }
+    '
+#+END_SRC
+
+#+results:
+:RESULTS:
+| Reason         | Number of entries |
+|----------------+-------------------|
+| Others         |              1228 |
+| Entry removed  |              1467 |
+| Substituted    |               559 |
+| Wrong division |               489 |
+:END:
+** Mapping counts onto Adl taxonomy
+#+BEGIN_SRC sh :dir ./data/
+mkdir -p adl_mappings
+
+cd adl_mappings
+
+perl -I../NCBI_taxonomy_files/lib/ ../../code/generate_adl_mappings.pl --new ../2015/eukaryota.all.taxids --old ../2011/eukaryota.all.taxids
+#+END_SRC
+
+#+results:
+: Found 28 different ranks named 'Adl_taxonomy' representing 378071/706701 sequences and 132 taxid without that rank representing 695/4338 sequences
+
+** BISON
+Download of viridiplantae data for all states of the USA and assign
+NCBI TaxIDs on genus and species level:
+#+BEGIN_SRC sh :dir ./data/
+# check if jq and curl are installed
+for i in jq curl
+do
+    which "$i" 2> /dev/null > /dev/null
+
+    if [ $? -ne 0 ]
+    then
+	echo "Missing program '$i'! Please install it"
+	exit 1
+    fi
+done
+
+mkdir -p bison
+cd bison
+for i in $(seq 1 56)
+do
+    # Excludes 3, 7, 14, 43 and 52.
+    if [ "$i" -eq 3 ] || [ "$i" -eq 7 ] || [ "$i" -eq 14 ] || [ "$i" -eq 43 ] || [ "$i" -eq 52 ]
+    then
+        continue      # Those fips are not used
+    fi
+    i=$(printf "%02d" $i)
+    curl 'http://bison.usgs.ornl.gov/solrstaging/occurrences/select?q=computedStateFips:(%22'$i'%22)%20AND%20hierarchy_homonym_string:(*-202422-*)&facet.mincount=1&rows=0&facet=true&facet.missing=true&facet.limit=-1&wt=json&indent=true&facet.field=ITISscientificName' | \
+	jq ".facet_counts | .facet_fields | .ITISscientificName | .[]" | \
+	perl -ne 'chomp; s/"//g;print "$_\t".<>' >$i.checklist
+    cut -f1 $i.checklist | cut -f1,2 -s -d" " | sort -u >$i.species
+    curl --form button="Save in file" --form fl=@$i.species\
+    http://www.ncbi.nlm.nih.gov/Taxonomy/TaxIdentifier/tax_identifier.cgi >$i.species.tsv
+    cut -f7 $i.species.tsv | sort -u | grep -P "\d" >$i.species.taxids
+done
+cat *.species.taxids | sort -u > ../usa.species.taxids
+#+END_SRC
+
+#+results:
+
+Generate the coverage for 2011 and 2015 update:
+#+BEGIN_SRC sh :dir ./data/ :results output drawer replace
+NUMBERBISON=$(cat usa.species.taxids | wc -l)
+VALUE2011=$(cat usa.species.taxids ./2011/eukaryota.all.species.taxids | sort | uniq -d | wc -l)
+VALUE2015=$(cat usa.species.taxids ./2015/eukaryota.all.species.taxids | sort | uniq -d | wc -l)
+
+echo "| # taxa in BISON: $NUMBERBISON |  |  | |"
+echo "| | 2011 | 2015 | change |"
+echo "|--"
+echo "| # covered taxa | $VALUE2011 | $VALUE2015 |"
+echo "| coverage in percent | | |"
+echo '#+TBLFM: @4$2..@4$3=((@3/'$NUMBERBISON')*100);%0.2f::@3$4=((@3$3/@3$2)*100)-100;%0.2f'
+#+END_SRC
+
+#+results:
+:RESULTS:
+| # taxa in BISON: 18537 |       |       |        |
+|                        |  2011 |  2015 | change |
+|------------------------+-------+-------+--------|
+| # covered taxa         | 10988 | 13275 |  20.81 |
+| coverage in percent    | 59.28 | 71.61 |        |
+#+TBLFM: @4$2..@4$3=((@3/18537)*100);%0.2f::@3$4=((@3$3/@3$2)*100)-100;%0.2f
+:END:
